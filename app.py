@@ -12,47 +12,14 @@ st.set_page_config(
 )
 
 st.title("📊 Sports Betting EV Screener")
-
-st.write(
-    "A research platform for identifying "
-    "positive Expected Value betting opportunities."
-)
+st.write("Compare sportsbook prices and identify the best available odds.")
 
 
 # -----------------------------
-# SIDEBAR
+# HELPER FUNCTIONS
 # -----------------------------
 
-st.sidebar.header("Screener Settings")
-
-sport = st.sidebar.selectbox("Select Sport", ["NBA"])
-market = st.sidebar.selectbox("Select Market", ["Moneyline"])
-
-
-# -----------------------------
-# ODDS CALCULATIONS
-# -----------------------------
-
-def american_to_probability(odds):
-
-    if odds is None:
-        return None
-
-    try:
-        odds = float(odds)
-    except (ValueError, TypeError):
-        return None
-
-    if odds < 0:
-        return abs(odds) / (abs(odds) + 100)
-
-    elif odds > 0:
-        return 100 / (odds + 100)
-
-    return None
-
-
-def convert_book(book):
+def format_book(book):
 
     names = {
         "williamhill_us": "William Hill",
@@ -66,6 +33,22 @@ def convert_book(book):
     }
 
     return names.get(book, book.replace("_", " ").title())
+
+
+def american_to_probability(odds):
+
+    if odds is None:
+        return None
+
+    odds = float(odds)
+
+    if odds < 0:
+        return abs(odds) / (abs(odds) + 100)
+
+    if odds > 0:
+        return 100 / (odds + 100)
+
+    return None
 
 
 def convert_odds_data(response):
@@ -83,17 +66,20 @@ def convert_odds_data(response):
 
                 odds = outcome.get("price")
 
+                if odds is None:
+                    continue
+
                 rows.append({
                     "Event ID": game.get("event_id"),
                     "Game": f"{away} @ {home}",
-                    "Start Time (UTC)": game.get("start_time"),
-                    "Sportsbook": convert_book(
+                    "Start Time UTC": game.get("start_time"),
+                    "Sportsbook": format_book(
                         book.get("book", "Unknown")
                     ),
                     "Market": book.get("market", "Unknown"),
                     "Selection": outcome.get("name", "Unknown"),
-                    "American Odds": odds,
-                    "Last Updated (UTC)": book.get("updated_at"),
+                    "American Odds": float(odds),
+                    "Last Updated UTC": book.get("updated_at"),
                     "Implied Probability": american_to_probability(odds)
                 })
 
@@ -102,36 +88,32 @@ def convert_odds_data(response):
     if df.empty:
         return df
 
-    # Calculate no-vig probability separately
-    # for each game, sportsbook and market.
+    # Calculate no-vig probabilities separately
+    # for each game and sportsbook.
 
-    group_columns = [
+    book_groups = [
         "Event ID",
         "Sportsbook",
         "Market"
     ]
 
-    df["Market Probability Total"] = (
-        df.groupby(group_columns)["Implied Probability"]
+    df["Probability Total"] = (
+        df.groupby(book_groups)["Implied Probability"]
         .transform("sum")
     )
 
     df["Outcome Count"] = (
-        df.groupby(group_columns)["Implied Probability"]
+        df.groupby(book_groups)["Implied Probability"]
         .transform("count")
     )
 
-    # Only calculate when at least two outcomes are available.
-    # A single-sided quote cannot produce a reliable no-vig estimate.
-
     df["No-Vig Probability"] = (
-        df["Implied Probability"] /
-        df["Market Probability Total"]
+        df["Implied Probability"] / df["Probability Total"]
     )
 
     df.loc[
         (df["Outcome Count"] < 2) |
-        (df["Market Probability Total"] <= 0),
+        (df["Probability Total"] <= 0),
         "No-Vig Probability"
     ] = None
 
@@ -139,19 +121,83 @@ def convert_odds_data(response):
 
 
 # -----------------------------
+# BEST AVAILABLE ODDS FINDER
+# -----------------------------
+
+def find_best_odds(df):
+
+    if df.empty:
+        return pd.DataFrame()
+
+    group_columns = [
+        "Event ID",
+        "Game",
+        "Market",
+        "Selection"
+    ]
+
+    # Find the highest American odds for each selection.
+    best_indexes = (
+        df.groupby(group_columns)["American Odds"].idxmax()
+    )
+
+    best = df.loc[best_indexes].copy()
+
+    best = best.rename(columns={
+        "Sportsbook": "Best Sportsbook",
+        "American Odds": "Best Odds",
+        "Last Updated UTC": "Best Price Updated UTC"
+    })
+
+    # Average no-vig probability across available books.
+    consensus = (
+        df.groupby(group_columns)
+        .agg(
+            Market_Fair_Probability=("No-Vig Probability", "mean"),
+            Books_Compared=("No-Vig Probability", "count")
+        )
+        .reset_index()
+    )
+
+    best = best.merge(
+        consensus,
+        on=group_columns,
+        how="left"
+    )
+
+    # Compare the best price's break-even probability
+    # with the average market no-vig probability.
+
+    best["Best Price Break-Even"] = (
+        best["Best Odds"].apply(american_to_probability)
+    )
+
+    best["Probability Difference"] = (
+        best["Market_Fair_Probability"]
+        - best["Best Price Break-Even"]
+    )
+
+    return best
+
+
+# -----------------------------
 # DASHBOARD
 # -----------------------------
 
-st.header("NBA Moneyline Analysis")
+st.sidebar.header("Screener Settings")
+
+sport = st.sidebar.selectbox("Select Sport", ["NBA"])
+market = st.sidebar.selectbox("Select Market", ["Moneyline"])
+
+st.header("NBA Best Available Odds")
 
 st.write(
-    "Compare sportsbook odds and calculate "
-    "vig-free market probabilities."
+    "Find the best available sportsbook price for each team."
 )
 
 if st.button("Fetch NBA Odds", type="primary"):
 
-    with st.spinner("Retrieving NBA odds..."):
+    with st.spinner("Retrieving and comparing sportsbook odds..."):
 
         try:
 
@@ -166,34 +212,40 @@ if st.button("Fetch NBA Odds", type="primary"):
 
             else:
 
-                odds_table = convert_odds_data(response)
+                df = convert_odds_data(response)
 
-                games = response.get("data", [])
-
-                st.success("Successfully retrieved odds!")
-
-                col1, col2, col3 = st.columns(3)
-
-                col1.metric("Games Found", len(games))
-
-                col2.metric("Odds Records", len(odds_table))
-
-                col3.metric(
-                    "Data Source",
-                    response.get("source", "Unknown").title()
-                )
-
-                if odds_table.empty:
+                if df.empty:
 
                     st.warning("No odds were returned.")
 
                 else:
 
-                    # Convert timestamps to Pacific Time.
+                    best = find_best_odds(df)
 
-                    odds_table["Start Time"] = (
+                    st.success("Odds retrieved and compared!")
+
+                    col1, col2, col3 = st.columns(3)
+
+                    col1.metric(
+                        "Games Found",
+                        df["Event ID"].nunique()
+                    )
+
+                    col2.metric(
+                        "Sportsbook Quotes",
+                        len(df)
+                    )
+
+                    col3.metric(
+                        "Selections Compared",
+                        len(best)
+                    )
+
+                    # Format timestamps for Pacific Time.
+
+                    best["Start Time"] = (
                         pd.to_datetime(
-                            odds_table["Start Time (UTC)"],
+                            best["Start Time UTC"],
                             format="ISO8601",
                             utc=True
                         )
@@ -201,9 +253,9 @@ if st.button("Fetch NBA Odds", type="primary"):
                         .dt.strftime("%b %d, %I:%M %p")
                     )
 
-                    odds_table["Last Updated"] = (
+                    best["Best Price Updated"] = (
                         pd.to_datetime(
-                            odds_table["Last Updated (UTC)"],
+                            best["Best Price Updated UTC"],
                             format="ISO8601",
                             utc=True
                         )
@@ -211,55 +263,111 @@ if st.button("Fetch NBA Odds", type="primary"):
                         .dt.strftime("%b %d, %I:%M %p")
                     )
 
-                    # Display probabilities as percentages.
-
-                    odds_table["Implied Probability"] = (
-                        odds_table["Implied Probability"]
-                        .apply(
-                            lambda x: f"{x:.2%}"
-                            if pd.notna(x) else "—"
-                        )
-                    )
-
-                    odds_table["No-Vig Probability"] = (
-                        odds_table["No-Vig Probability"]
+                    best["Market Fair Probability"] = (
+                        best["Market_Fair_Probability"]
                         .apply(
                             lambda x: f"{x:.2%}"
                             if pd.notna(x) else "Unavailable"
                         )
                     )
 
-                    # Remove internal calculation columns.
-
-                    odds_table = odds_table.drop(
-                        columns=[
-                            "Event ID",
-                            "Start Time (UTC)",
-                            "Last Updated (UTC)",
-                            "Market Probability Total",
-                            "Outcome Count"
-                        ]
+                    best["Break-Even Probability"] = (
+                        best["Best Price Break-Even"]
+                        .apply(lambda x: f"{x:.2%}")
                     )
 
-                    st.subheader("Sportsbook Odds & Fair Probabilities")
-
-                    st.dataframe(
-                        odds_table,
-                        use_container_width=True,
-                        hide_index=True
+                    best["Probability Difference"] = (
+                        best["Probability Difference"]
+                        .apply(
+                            lambda x: f"{x:+.2%}"
+                            if pd.notna(x) else "Unavailable"
+                        )
                     )
 
-                    st.download_button(
-                        "Download Analysis as CSV",
-                        data=odds_table.to_csv(index=False),
-                        file_name="nba_no_vig_analysis.csv",
-                        mime="text/csv"
-                    )
+                    best_display = best[[
+                        "Game",
+                        "Selection",
+                        "Best Sportsbook",
+                        "Best Odds",
+                        "Market Fair Probability",
+                        "Break-Even Probability",
+                        "Probability Difference",
+                        "Books_Compared",
+                        "Start Time",
+                        "Best Price Updated"
+                    ]].copy()
+
+                    best_display = best_display.rename(columns={
+                        "Best Odds": "Best American Odds",
+                        "Books_Compared": "Books Compared"
+                    })
+
+                    tab1, tab2 = st.tabs([
+                        "Best Available Odds",
+                        "All Sportsbook Quotes"
+                    ])
+
+                    with tab1:
+
+                        st.subheader("Best Price for Each Team")
+
+                        st.dataframe(
+                            best_display,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                        st.download_button(
+                            "Download Best Odds CSV",
+                            data=best_display.to_csv(index=False),
+                            file_name="best_nba_odds.csv",
+                            mime="text/csv"
+                        )
+
+                    with tab2:
+
+                        st.subheader("Individual Sportsbook Prices")
+
+                        all_quotes = df.copy()
+
+                        all_quotes["Last Updated"] = (
+                            pd.to_datetime(
+                                all_quotes["Last Updated UTC"],
+                                format="ISO8601",
+                                utc=True
+                            )
+                            .dt.tz_convert("America/Los_Angeles")
+                            .dt.strftime("%b %d, %I:%M %p")
+                        )
+
+                        all_quotes["No-Vig Probability"] = (
+                            all_quotes["No-Vig Probability"]
+                            .apply(
+                                lambda x: f"{x:.2%}"
+                                if pd.notna(x) else "Unavailable"
+                            )
+                        )
+
+                        all_quotes = all_quotes[[
+                            "Game",
+                            "Sportsbook",
+                            "Selection",
+                            "American Odds",
+                            "No-Vig Probability",
+                            "Last Updated"
+                        ]]
+
+                        st.dataframe(
+                            all_quotes,
+                            use_container_width=True,
+                            hide_index=True
+                        )
 
                     st.info(
-                        "No-vig probabilities are calculated "
-                        "separately for each sportsbook. They are "
-                        "market benchmarks, not independent predictions."
+                        "Probability Difference compares the average "
+                        "no-vig market probability with the break-even "
+                        "probability of the best available price. "
+                        "It is not an independent EV estimate."
                     )
 
         except Exception as error:
