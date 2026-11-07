@@ -1,17 +1,12 @@
 
 import requests
 import streamlit as st
-import pandas as pd
 
 
 API_URL = "https://api.bettingdataapi.com/odds/"
 
 
-def fetch_odds(sport="nba", markets=None, bookmakers=None):
-    """
-    Retrieve odds from BettingDataAPI.
-    Initial test: NBA moneyline odds.
-    """
+def fetch_odds(sport="basketball_nba", markets=None, bookmakers=None):
 
     try:
         api_key = st.secrets["ODDS_API_KEY"]
@@ -20,11 +15,23 @@ def fetch_odds(sport="nba", markets=None, bookmakers=None):
             "API key not found. Check Streamlit Secrets."
         )
 
+    if markets is None:
+        markets = ["h2h"]
+
+    if isinstance(markets, list):
+        markets = ",".join(markets)
+
     headers = {
         "x-api-key": api_key
     }
 
-    params = {}
+    params = {
+        "sport_key": sport,
+        "markets": markets
+    }
+
+    if bookmakers:
+        params["bookmakers"] = ",".join(bookmakers)
 
     try:
         response = requests.get(
@@ -34,23 +41,21 @@ def fetch_odds(sport="nba", markets=None, bookmakers=None):
             timeout=20
         )
 
-        if response.status_code in (401, 403):
+        if response.status_code != 200:
             raise RuntimeError(
-                "API key rejected. Check your BettingDataAPI key."
+                f"HTTP {response.status_code}: {response.text}"
             )
 
-        if response.status_code == 429:
-            raise RuntimeError(
-                "API request limit reached."
-            )
-
-        response.raise_for_status()
         data = response.json()
+
+        if not data.get("success"):
+            raise RuntimeError(
+                data.get("message", "API request was unsuccessful.")
+            )
+
+        return data
 
     except requests.exceptions.RequestException as error:
         raise RuntimeError(
             f"Could not retrieve odds: {error}"
         )
-
-    # Show the returned data structure for initial testing.
-    return data
