@@ -1,28 +1,32 @@
 
 import streamlit as st
-import json
+import pandas as pd
 
 from data_providers.odds_api import fetch_odds
 
 
-# Page configuration
+# -----------------------------
+# PAGE CONFIGURATION
+# -----------------------------
+
 st.set_page_config(
     page_title="Sports Betting EV Screener",
     page_icon="📊",
     layout="wide"
 )
 
-
-# Main title
 st.title("📊 Sports Betting EV Screener")
 
 st.write(
-    "A sports betting research platform "
-    "focused on identifying positive Expected Value."
+    "A research platform for identifying "
+    "positive Expected Value betting opportunities."
 )
 
 
-# Sidebar
+# -----------------------------
+# SIDEBAR
+# -----------------------------
+
 st.sidebar.header("Screener Settings")
 
 sport = st.sidebar.selectbox(
@@ -36,48 +40,168 @@ market = st.sidebar.selectbox(
 )
 
 
-# Dashboard metrics
-col1, col2, col3 = st.columns(3)
+# -----------------------------
+# HELPER FUNCTIONS
+# -----------------------------
 
-col1.metric("Opportunities Found", "--")
-col2.metric("Average Expected Value", "--")
-col3.metric("Sports Covered", "1")
+def format_book(book):
+    names = {
+        "williamhill_us": "William Hill",
+        "betrivers": "BetRivers",
+        "hardrockbet": "Hard Rock Bet",
+        "betmgm": "BetMGM",
+        "draftkings": "DraftKings",
+        "fanduel": "FanDuel",
+        "fanatics": "Fanatics",
+        "circa": "Circa"
+    }
+
+    return names.get(book, book.replace("_", " ").title())
 
 
-# Main section
-st.header("API Connection Test")
+def convert_odds_data(response):
+
+    rows = []
+
+    games = response.get("data", [])
+
+    for game in games:
+
+        home = game.get("home_team", "Unknown")
+        away = game.get("away_team", "Unknown")
+
+        start_time = game.get("start_time")
+
+        for book in game.get("books", []):
+
+            for outcome in book.get("outcomes", []):
+
+                rows.append({
+                    "Game": f"{away} @ {home}",
+                    "Start Time (UTC)": start_time,
+                    "Sportsbook": format_book(
+                        book.get("book", "Unknown")
+                    ),
+                    "Market": book.get("market", "Unknown"),
+                    "Selection": outcome.get("name", "Unknown"),
+                    "American Odds": outcome.get("price"),
+                    "Last Updated (UTC)": book.get("updated_at")
+                })
+
+    return pd.DataFrame(rows)
+
+
+# -----------------------------
+# DASHBOARD
+# -----------------------------
+
+st.header("NBA Odds Screener")
 
 st.write(
-    "We're testing the connection to BettingDataAPI "
-    "before building the odds analysis system."
+    "Retrieve moneyline odds from multiple sportsbooks."
 )
 
-
-# Fetch odds button
 if st.button("Fetch NBA Odds", type="primary"):
 
-    with st.spinner("Connecting to BettingDataAPI..."):
+    with st.spinner("Retrieving NBA odds..."):
 
         try:
-            data = fetch_odds(sport="basketball_nba")
 
-            st.success("API request completed!")
+            response = fetch_odds(
+                sport="basketball_nba",
+                markets=["h2h"]
+            )
 
-            st.subheader("Raw API Response")
+            if not response.get("success"):
 
-            st.json(data)
+                st.error("The API returned an unsuccessful response.")
+
+            else:
+
+                odds_table = convert_odds_data(response)
+
+                st.success("Successfully retrieved odds!")
+
+                games = response.get("data", [])
+
+                col1, col2, col3 = st.columns(3)
+
+                col1.metric(
+                    "Games Found",
+                    len(games)
+                )
+
+                col2.metric(
+                    "Odds Records",
+                    len(odds_table)
+                )
+
+                col3.metric(
+                    "Data Source",
+                    response.get("source", "Unknown").title()
+                )
+
+                if odds_table.empty:
+
+                    st.warning("No odds were returned.")
+
+                else:
+
+                    # Convert UTC times to Oakland local time
+                    odds_table["Start Time"] = (
+                        pd.to_datetime(
+                            odds_table["Start Time (UTC)"],
+                            utc=True
+                        )
+                        .dt.tz_convert("America/Los_Angeles")
+                        .dt.strftime("%b %d, %I:%M %p")
+                    )
+
+                    odds_table["Last Updated"] = (
+                        pd.to_datetime(
+                            odds_table["Last Updated (UTC)"],
+                            utc=True
+                        )
+                        .dt.tz_convert("America/Los_Angeles")
+                        .dt.strftime("%b %d, %I:%M %p")
+                    )
+
+                    odds_table = odds_table.drop(
+                        columns=[
+                            "Start Time (UTC)",
+                            "Last Updated (UTC)"
+                        ]
+                    )
+
+                    st.subheader("Retrieved Sportsbook Odds")
+
+                    st.dataframe(
+                        odds_table,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    st.caption(
+                        "Times are displayed in Pacific Time. "
+                        "Last Updated refers to each sportsbook's "
+                        "quote timestamp, not necessarily the time "
+                        "you retrieved the data."
+                    )
+
+                    st.download_button(
+                        "Download Odds as CSV",
+                        data=odds_table.to_csv(index=False),
+                        file_name="nba_odds.csv",
+                        mime="text/csv"
+                    )
 
         except Exception as error:
 
-            st.error("The API request failed.")
-
-            st.code(str(error))
+            st.error(f"Something went wrong: {error}")
 
 
-# Footer
 st.divider()
 
 st.caption(
-    "Development version — NBA moneyline testing."
+    "Development version | NBA Moneyline | BettingDataAPI"
 )
-
