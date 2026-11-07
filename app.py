@@ -851,3 +851,23 @@ if os.path.exists("data/odds_moneyline.csv"):
 
     st.subheader("Sample Records")
     st.dataframe(odds_check.head(5))
+
+
+# ==========================================
+# NBA TEST PREDICTIONS INSPECTION
+# ==========================================
+
+if "nba_test_predictions" in st.session_state:
+
+    predictions_df = st.session_state["nba_test_predictions"]
+
+    st.divider()
+    st.header("NBA Test Predictions")
+
+    st.write("Total predictions:", len(predictions_df))
+
+    st.write("Available columns:")
+    st.write(list(predictions_df.columns))
+
+    st.subheader("First 10 Predictions")
+    st.dataframe(predictions_df.head(10))
