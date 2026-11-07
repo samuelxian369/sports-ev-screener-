@@ -4,6 +4,8 @@ import pandas as pd
 
 from data_providers.odds_api import fetch_odds
 
+from models.nba_win_model import train_and_evaluate
+
 
 st.set_page_config(
     page_title="Sports Betting EV Screener",
