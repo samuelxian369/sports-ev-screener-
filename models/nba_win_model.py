@@ -332,14 +332,16 @@ def train_and_evaluate():
 
     predictions = model.predict_proba(X_test)[:, 1]
 
+    # Save individual test predictions for backtesting.
+
     test_predictions = X_test.copy()
 
-test_predictions["actual_result"] = y_test.values
-test_predictions["model_probability"] = predictions
+    test_predictions["actual_result"] = y_test.values
+    test_predictions["model_probability"] = predictions
 
-test_predictions["game_date"] = df.loc[X_test.index, "game_date"].values
-test_predictions["team"] = df.loc[X_test.index, "team"].values
-test_predictions["opponent"] = df.loc[X_test.index, "opponent"].values
+    test_predictions["game_date"] = df.loc[X_test.index, "game_date"].values
+    test_predictions["team"] = df.loc[X_test.index, "team"].values
+    test_predictions["opponent"] = df.loc[X_test.index, "opponent"].values
 
     predicted_classes = (
         predictions >= 0.50
