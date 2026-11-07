@@ -820,16 +820,16 @@ if os.path.exists("data/odds_moneyline.csv"):
              round(len(odds_check) / odds_check["game_id"].nunique(), 2))
 
     st.subheader("Snapshot Types")
-    st.write(odds_check["snapshot"].value_counts(dropna=False))
+    st.code(odds_check["snapshot"].value_counts(dropna=False).to_string())
 
     st.subheader("Quote Quality")
-    st.write(odds_check["quote_quality"].value_counts(dropna=False))
+    st.code(odds_check["quote_quality"].value_counts(dropna=False).to_string())
 
     st.subheader("Data Flags")
 
     for column in ["benchmark_eligible", "score_verified", "benchmark_only"]:
         st.write(column)
-        st.write(odds_check[column].value_counts(dropna=False))
+        st.code(odds_check[column].value_counts(dropna=False).to_string())
 
     st.subheader("Missing Odds Prices")
 
