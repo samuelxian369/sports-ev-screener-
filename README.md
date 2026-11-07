@@ -1,79 +1,44 @@
-# sports-ev-screener-
+# Sports Betting EV Screener
 
-Project Goal
+## Project Goal
+Build a free sports betting analytics platform that identifies positive Expected Value (EV) opportunities.
 
-Build a free, web-based sports betting analytics platform that identifies positive Expected Value (EV) betting opportunities.
+## Main Objectives
+- Identify positive-EV sportsbook bets.
+- Identify positive-EV PrizePicks opportunities.
+- Analyze player props and game lines.
+- Compare sportsbook odds.
+- Optimize PrizePicks entries.
+- Track betting performance.
 
-Primary Objectives
+## Sports Coverage
+- NBA
+- NFL
+- MLB
+- NHL
+- Soccer
+- Tennis
+- College Sports
 
-Identify positive-EV sportsbook bets.
+## Technology
+- GitHub: Project storage
+- Python: Calculations and data processing
+- Streamlit: Web application
+- Sports odds API: Betting data
 
-Identify positive-EV PrizePicks opportunities.
+## Core Features
+1. Sportsbook odds collection
+2. No-vig probability calculations
+3. Expected Value calculations
+4. Player prop analysis
+5. PrizePicks optimizer
+6. Injury and matchup analysis
+7. Historical performance tracking
+8. Automated opportunity scanning
 
-Analyze player props, game lines, and other betting markets.
-
-Compare sportsbook odds against independent probability estimates.
-
-Optimize PrizePicks entries based on expected value.
-
-Track historical performance and profitability.
-
-Sports Coverage
-
-NBA
-
-NFL
-
-MLB
-
-NHL
-
-Soccer
-
-Tennis
-
-College sports
-
-Other supported sports
-
-Technology
-
-GitHub: Project storage and version control.
-
-Python: Data processing and calculations.
-
-Streamlit: Web application.
-
-SportsGameOdds: Initial sports odds and statistics data source.
-
-Spreadsheet/database: Historical betting records.
-
-Core Features
-
-Sportsbook odds collection.
-
-Probability and no-vig calculations.
-
-Expected Value (EV) calculations.
-
-Player prop analysis.
-
-PrizePicks payout optimization.
-
-Injury and matchup analysis.
-
-Bet tracking and performance analytics.
-
-Automated opportunity scanning.
-
-Development Philosophy
-
-Prioritize free tools and services.
-
-Never force a bet.
-
-Prioritize long-term profitability over hit rate alone.
-
-Clearly distinguish market-implied probabilities from independent estimates.
-
-Avoid unsupported or fabricated data.
+## Development Rules
+- Prioritize free tools.
+- Never force a bet.
+- Prioritize long-term profitability.
+- Distinguish market probabilities from independent estimates.
+- Never fabricate data.
