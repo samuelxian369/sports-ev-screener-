@@ -604,6 +604,10 @@ if st.button("Train and Test NBA Model", type="primary"):
                 results["calibration_report"]
             )
 
+            st.session_state["nba_test_predictions"] = (
+                results["test_predictions"]
+            )
+            
             st.success("Model training and testing completed!")
 
         except Exception as error:
