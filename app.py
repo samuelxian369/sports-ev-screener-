@@ -593,13 +593,17 @@ if st.button("Train and Test NBA Model", type="primary"):
 
         try:
 
-            results = train_and_evaluate()
+results = train_and_evaluate()
 
-            st.session_state["nba_model_metrics"] = (
-                results["metrics"]
-            )
+st.session_state["nba_model_metrics"] = (
+    results["metrics"]
+)
 
-            st.success("Model training and testing completed!")
+st.session_state["nba_calibration_report"] = (
+    results["calibration_report"]
+)
+
+st.success("Model training and testing completed!")
 
         except Exception as error:
 
@@ -656,6 +660,58 @@ if "nba_model_metrics" in st.session_state:
         hide_index=True
     )
 
+
+    st.divider()
+
+    st.subheader("Probability Calibration")
+
+    st.write(
+        "Compare the probabilities predicted by our model "
+        "against the actual win rates."
+    )
+
+    if "nba_calibration_report" in st.session_state:
+
+        calibration = (
+            st.session_state["nba_calibration_report"].copy()
+        )
+
+        calibration["Average Predicted Probability"] = (
+            calibration["Predicted Probability"]
+            .apply(
+                lambda x: f"{x:.1%}"
+                if pd.notna(x) else "Unavailable"
+            )
+        )
+
+        calibration["Actual Win Rate"] = (
+            calibration["Actual Result"]
+            .apply(
+                lambda x: f"{x:.1%}"
+                if pd.notna(x) else "Unavailable"
+            )
+        )
+
+        calibration = calibration[[
+            "Probability Range",
+            "Average Predicted Probability",
+            "Actual Win Rate",
+            "Predictions"
+        ]]
+
+        st.dataframe(
+            calibration,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.caption(
+            "A well-calibrated model should have an actual "
+            "win rate close to its average predicted probability. "
+            "Ranges with very few predictions are less reliable."
+        )
+
+    
     st.write(
         f"Training games: **{metrics['training_rows']:,}**"
     )
