@@ -4,83 +4,53 @@ import streamlit as st
 import pandas as pd
 
 
-API_URL = "https://api.the-odds-api.com/v4/sports"
+API_URL = "https://api.bettingdataapi.com/odds/"
 
 
-def fetch_odds(sport="basketball_nba", markets=None, bookmakers=None):
+def fetch_odds(sport="nba", markets=None, bookmakers=None):
     """
-    Fetch odds from The Odds API.
-
+    Retrieve odds from BettingDataAPI.
     Initial test: NBA moneyline odds.
     """
 
-    # Get the API key from Streamlit's secure settings
     try:
         api_key = st.secrets["ODDS_API_KEY"]
     except Exception:
         raise RuntimeError(
-            "API key not found. Check Streamlit Secrets settings."
+            "API key not found. Check Streamlit Secrets."
         )
 
-    # Start with the basic moneyline market
-    if markets is None:
-        markets = ["h2h"]
-
-    if isinstance(markets, list):
-        markets = ",".join(markets)
-
-    params = {
-        "apiKey": api_key,
-        "regions": "us",
-        "markets": markets,
-        "oddsFormat": "american"
+    headers = {
+        "x-api-key": api_key
     }
 
-    if bookmakers:
-        params["bookmakers"] = ",".join(bookmakers)
+    params = {}
 
-    # Send the request
     try:
         response = requests.get(
-            f"{API_URL}/{sport}/odds",
+            API_URL,
+            headers=headers,
             params=params,
             timeout=20
         )
 
-        if response.status_code == 401:
+        if response.status_code in (401, 403):
             raise RuntimeError(
-                "API key was rejected. Check your Streamlit Secrets."
+                "API key rejected. Check your BettingDataAPI key."
             )
 
         if response.status_code == 429:
             raise RuntimeError(
-                "API request limit reached. Try again later."
+                "API request limit reached."
             )
 
         response.raise_for_status()
-        games = response.json()
+        data = response.json()
 
     except requests.exceptions.RequestException as error:
-        raise RuntimeError(f"Could not retrieve odds: {error}")
+        raise RuntimeError(
+            f"Could not retrieve odds: {error}"
+        )
 
-    # Convert the response into a table
-    rows = []
-
-    for game in games:
-        for bookmaker in game.get("bookmakers", []):
-            for market in bookmaker.get("markets", []):
-                for outcome in market.get("outcomes", []):
-
-                    rows.append({
-                        "Game": (
-                            f"{game['away_team']} @ {game['home_team']}"
-                        ),
-                        "Start Time": game.get("commence_time"),
-                        "Sportsbook": bookmaker.get("title"),
-                        "Market": market.get("key"),
-                        "Selection": outcome.get("name"),
-                        "Odds": outcome.get("price"),
-                        "Last Updated": market.get("last_update")
-                    })
-
-    return pd.DataFrame(rows)
+    # Show the returned data structure for initial testing.
+    return data
