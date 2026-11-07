@@ -376,9 +376,80 @@ def train_and_evaluate():
         )
     }
 
+
+    # --------------------------------
+    # PROBABILITY CALIBRATION REPORT
+    # --------------------------------
+
+    calibration_bins = [
+        0.0, 0.50, 0.55, 0.60, 0.65,
+        0.70, 0.75, 0.80, 0.85, 0.90,
+        0.95, 1.000001
+    ]
+
+    calibration_labels = [
+        "Below 50%",
+        "50–55%",
+        "55–60%",
+        "60–65%",
+        "65–70%",
+        "70–75%",
+        "75–80%",
+        "80–85%",
+        "85–90%",
+        "90–95%",
+        "95–100%"
+    ]
+
+    calibration_data = pd.DataFrame({
+        "Predicted Probability": predictions,
+        "Actual Result": y_test.values
+    })
+
+    calibration_data["Probability Range"] = pd.cut(
+        calibration_data["Predicted Probability"],
+        bins=calibration_bins,
+        labels=calibration_labels,
+        right=False,
+        include_lowest=True
+    )
+
+    calibration_report = (
+        calibration_data
+        .groupby("Probability Range", observed=False)
+        .agg({
+            "Predicted Probability": "mean",
+            "Actual Result": "mean"
+        })
+        .reset_index()
+    )
+
+    counts = (
+        calibration_data
+        .groupby("Probability Range", observed=False)
+        .size()
+        .reset_index(name="Predictions")
+    )
+
+    calibration_report = calibration_report.merge(
+        counts,
+        on="Probability Range"
+    )
+
+    calibration_report = calibration_report[
+        calibration_report["Predictions"] > 0
+    ].copy()
+
+
+    calibration_report = calibration_report[
+        calibration_report["Predictions"] > 0
+    ].copy()
+
+    
     return {
         "model": model,
         "metrics": metrics,
         "feature_columns": feature_columns,
-        "historical_data": df
+        "historical_data": df,
+        "calibration_report": calibration_report
     }
