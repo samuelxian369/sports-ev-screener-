@@ -750,3 +750,55 @@ if "nba_model_metrics" in st.session_state:
         "of future betting performance. We must validate "
         "probability calibration and test additional seasons."
     )
+
+
+# ==========================================
+# HISTORICAL ODDS DATASET CHECK
+# ==========================================
+
+st.header("Historical NBA Odds Dataset")
+
+import os
+
+odds_file = "data/odds_moneyline.csv"
+
+if os.path.exists(odds_file):
+    try:
+        historical_odds = pd.read_csv(odds_file)
+
+        st.success("Historical odds file loaded successfully!")
+
+        st.write("Total odds records:", len(historical_odds))
+
+        st.write(
+            "Date range:",
+            historical_odds["game_date"].min(),
+            "to",
+            historical_odds["game_date"].max()
+        )
+
+        st.write(
+            "Number of sportsbooks:",
+            historical_odds["bookmaker"].nunique()
+        )
+
+        st.write("Sportsbooks included:")
+        st.write(sorted(historical_odds["bookmaker"].dropna().unique()))
+
+        st.write("Benchmark-eligible records:")
+        st.write(
+            historical_odds["benchmark_eligible"]
+            .astype(str)
+            .str.lower()
+            .eq("true")
+            .sum()
+        )
+
+        st.subheader("Sample Historical Odds")
+        st.dataframe(historical_odds.head(10))
+
+    except Exception as error:
+        st.error(f"Could not read the historical odds file: {error}")
+
+else:
+    st.error(f"File not found: {odds_file}")
