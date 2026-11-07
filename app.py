@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 st.title("📊 Sports Betting EV Screener")
-st.write("Compare sportsbook prices and identify the best available odds.")
+st.write("Compare sportsbook prices and calculate expected value.")
 
 
 # -----------------------------
@@ -49,6 +49,50 @@ def american_to_probability(odds):
         return 100 / (odds + 100)
 
     return None
+
+
+def american_to_decimal(odds):
+
+    odds = float(odds)
+
+    if odds > 0:
+        return 1 + odds / 100
+
+    if odds < 0:
+        return 1 + 100 / abs(odds)
+
+    raise ValueError("Odds cannot be zero.")
+
+
+def calculate_ev(estimated_probability, odds, stake=100):
+
+    decimal_odds = american_to_decimal(odds)
+
+    win_profit = (decimal_odds - 1) * stake
+    loss_amount = stake
+
+    expected_value = (
+        estimated_probability * win_profit
+        - (1 - estimated_probability) * loss_amount
+    )
+
+    return expected_value
+
+
+def format_pacific_time(timestamp):
+
+    if pd.isna(timestamp):
+        return "Unavailable"
+
+    converted = pd.to_datetime(
+        timestamp,
+        format="ISO8601",
+        utc=True
+    )
+
+    return converted.tz_convert(
+        "America/Los_Angeles"
+    ).strftime("%b %d, %I:%M %p")
 
 
 def convert_odds_data(response):
@@ -88,22 +132,19 @@ def convert_odds_data(response):
     if df.empty:
         return df
 
-    # Calculate no-vig probabilities separately
-    # for each game and sportsbook.
-
-    book_groups = [
+    group_columns = [
         "Event ID",
         "Sportsbook",
         "Market"
     ]
 
     df["Probability Total"] = (
-        df.groupby(book_groups)["Implied Probability"]
+        df.groupby(group_columns)["Implied Probability"]
         .transform("sum")
     )
 
     df["Outcome Count"] = (
-        df.groupby(book_groups)["Implied Probability"]
+        df.groupby(group_columns)["Implied Probability"]
         .transform("count")
     )
 
@@ -136,7 +177,6 @@ def find_best_odds(df):
         "Selection"
     ]
 
-    # Find the highest American odds for each selection.
     best_indexes = (
         df.groupby(group_columns)["American Odds"].idxmax()
     )
@@ -149,7 +189,6 @@ def find_best_odds(df):
         "Last Updated UTC": "Best Price Updated UTC"
     })
 
-    # Average no-vig probability across available books.
     consensus = (
         df.groupby(group_columns)
         .agg(
@@ -165,9 +204,6 @@ def find_best_odds(df):
         how="left"
     )
 
-    # Compare the best price's break-even probability
-    # with the average market no-vig probability.
-
     best["Best Price Break-Even"] = (
         best["Best Odds"].apply(american_to_probability)
     )
@@ -177,17 +213,38 @@ def find_best_odds(df):
         - best["Best Price Break-Even"]
     )
 
-    return best
+    return best.reset_index(drop=True)
 
 
 # -----------------------------
-# DASHBOARD
+# SESSION STORAGE
+# -----------------------------
+
+if "best_odds" not in st.session_state:
+    st.session_state["best_odds"] = None
+
+if "all_quotes" not in st.session_state:
+    st.session_state["all_quotes"] = None
+
+if "data_source" not in st.session_state:
+    st.session_state["data_source"] = None
+
+
+# -----------------------------
+# FETCH ODDS
 # -----------------------------
 
 st.sidebar.header("Screener Settings")
 
-sport = st.sidebar.selectbox("Select Sport", ["NBA"])
-market = st.sidebar.selectbox("Select Market", ["Moneyline"])
+st.sidebar.selectbox(
+    "Select Sport",
+    ["NBA"]
+)
+
+st.sidebar.selectbox(
+    "Select Market",
+    ["Moneyline"]
+)
 
 st.header("NBA Best Available Odds")
 
@@ -222,157 +279,288 @@ if st.button("Fetch NBA Odds", type="primary"):
 
                     best = find_best_odds(df)
 
+                    st.session_state["best_odds"] = best
+                    st.session_state["all_quotes"] = df
+                    st.session_state["data_source"] = response.get(
+                        "source", "Unknown"
+                    )
+
                     st.success("Odds retrieved and compared!")
-
-                    col1, col2, col3 = st.columns(3)
-
-                    col1.metric(
-                        "Games Found",
-                        df["Event ID"].nunique()
-                    )
-
-                    col2.metric(
-                        "Sportsbook Quotes",
-                        len(df)
-                    )
-
-                    col3.metric(
-                        "Selections Compared",
-                        len(best)
-                    )
-
-                    # Format timestamps for Pacific Time.
-
-                    best["Start Time"] = (
-                        pd.to_datetime(
-                            best["Start Time UTC"],
-                            format="ISO8601",
-                            utc=True
-                        )
-                        .dt.tz_convert("America/Los_Angeles")
-                        .dt.strftime("%b %d, %I:%M %p")
-                    )
-
-                    best["Best Price Updated"] = (
-                        pd.to_datetime(
-                            best["Best Price Updated UTC"],
-                            format="ISO8601",
-                            utc=True
-                        )
-                        .dt.tz_convert("America/Los_Angeles")
-                        .dt.strftime("%b %d, %I:%M %p")
-                    )
-
-                    best["Market Fair Probability"] = (
-                        best["Market_Fair_Probability"]
-                        .apply(
-                            lambda x: f"{x:.2%}"
-                            if pd.notna(x) else "Unavailable"
-                        )
-                    )
-
-                    best["Break-Even Probability"] = (
-                        best["Best Price Break-Even"]
-                        .apply(lambda x: f"{x:.2%}")
-                    )
-
-                    best["Probability Difference"] = (
-                        best["Probability Difference"]
-                        .apply(
-                            lambda x: f"{x:+.2%}"
-                            if pd.notna(x) else "Unavailable"
-                        )
-                    )
-
-                    best_display = best[[
-                        "Game",
-                        "Selection",
-                        "Best Sportsbook",
-                        "Best Odds",
-                        "Market Fair Probability",
-                        "Break-Even Probability",
-                        "Probability Difference",
-                        "Books_Compared",
-                        "Start Time",
-                        "Best Price Updated"
-                    ]].copy()
-
-                    best_display = best_display.rename(columns={
-                        "Best Odds": "Best American Odds",
-                        "Books_Compared": "Books Compared"
-                    })
-
-                    tab1, tab2 = st.tabs([
-                        "Best Available Odds",
-                        "All Sportsbook Quotes"
-                    ])
-
-                    with tab1:
-
-                        st.subheader("Best Price for Each Team")
-
-                        st.dataframe(
-                            best_display,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-                        st.download_button(
-                            "Download Best Odds CSV",
-                            data=best_display.to_csv(index=False),
-                            file_name="best_nba_odds.csv",
-                            mime="text/csv"
-                        )
-
-                    with tab2:
-
-                        st.subheader("Individual Sportsbook Prices")
-
-                        all_quotes = df.copy()
-
-                        all_quotes["Last Updated"] = (
-                            pd.to_datetime(
-                                all_quotes["Last Updated UTC"],
-                                format="ISO8601",
-                                utc=True
-                            )
-                            .dt.tz_convert("America/Los_Angeles")
-                            .dt.strftime("%b %d, %I:%M %p")
-                        )
-
-                        all_quotes["No-Vig Probability"] = (
-                            all_quotes["No-Vig Probability"]
-                            .apply(
-                                lambda x: f"{x:.2%}"
-                                if pd.notna(x) else "Unavailable"
-                            )
-                        )
-
-                        all_quotes = all_quotes[[
-                            "Game",
-                            "Sportsbook",
-                            "Selection",
-                            "American Odds",
-                            "No-Vig Probability",
-                            "Last Updated"
-                        ]]
-
-                        st.dataframe(
-                            all_quotes,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-                    st.info(
-                        "Probability Difference compares the average "
-                        "no-vig market probability with the break-even "
-                        "probability of the best available price. "
-                        "It is not an independent EV estimate."
-                    )
 
         except Exception as error:
 
             st.error(f"Something went wrong: {error}")
+
+
+# -----------------------------
+# DISPLAY SAVED ODDS TABLES
+# -----------------------------
+
+best = st.session_state["best_odds"]
+df = st.session_state["all_quotes"]
+
+if best is not None and not best.empty:
+
+    st.subheader("Current Odds Results")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Games Found",
+        df["Event ID"].nunique()
+    )
+
+    col2.metric(
+        "Sportsbook Quotes",
+        len(df)
+    )
+
+    col3.metric(
+        "Selections Compared",
+        len(best)
+    )
+
+    st.caption(
+        f"Provider data source: {st.session_state['data_source']}"
+    )
+
+    best_display = best.copy()
+
+    best_display["Start Time"] = (
+        best_display["Start Time UTC"]
+        .apply(format_pacific_time)
+    )
+
+    best_display["Best Price Updated"] = (
+        best_display["Best Price Updated UTC"]
+        .apply(format_pacific_time)
+    )
+
+    best_display["Market Fair Probability"] = (
+        best_display["Market_Fair_Probability"]
+        .apply(
+            lambda x: f"{x:.2%}"
+            if pd.notna(x) else "Unavailable"
+        )
+    )
+
+    best_display["Break-Even Probability"] = (
+        best_display["Best Price Break-Even"]
+        .apply(lambda x: f"{x:.2%}")
+    )
+
+    best_display["Probability Difference"] = (
+        best_display["Probability Difference"]
+        .apply(
+            lambda x: f"{x:+.2%}"
+            if pd.notna(x) else "Unavailable"
+        )
+    )
+
+    best_display = best_display[[
+        "Game",
+        "Selection",
+        "Best Sportsbook",
+        "Best Odds",
+        "Market Fair Probability",
+        "Break-Even Probability",
+        "Probability Difference",
+        "Books_Compared",
+        "Start Time",
+        "Best Price Updated"
+    ]].copy()
+
+    best_display = best_display.rename(columns={
+        "Best Odds": "Best American Odds",
+        "Books_Compared": "Books Compared"
+    })
+
+    tab1, tab2 = st.tabs([
+        "Best Available Odds",
+        "All Sportsbook Quotes"
+    ])
+
+    with tab1:
+
+        st.subheader("Best Price for Each Team")
+
+        st.dataframe(
+            best_display,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.download_button(
+            "Download Best Odds CSV",
+            data=best_display.to_csv(index=False),
+            file_name="best_nba_odds.csv",
+            mime="text/csv"
+        )
+
+    with tab2:
+
+        st.subheader("Individual Sportsbook Prices")
+
+        all_quotes = df.copy()
+
+        all_quotes["Last Updated"] = (
+            all_quotes["Last Updated UTC"]
+            .apply(format_pacific_time)
+        )
+
+        all_quotes["No-Vig Probability"] = (
+            all_quotes["No-Vig Probability"]
+            .apply(
+                lambda x: f"{x:.2%}"
+                if pd.notna(x) else "Unavailable"
+            )
+        )
+
+        all_quotes = all_quotes[[
+            "Game",
+            "Sportsbook",
+            "Selection",
+            "American Odds",
+            "No-Vig Probability",
+            "Last Updated"
+        ]]
+
+        st.dataframe(
+            all_quotes,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    st.info(
+        "The market fair probability is an average of sportsbook "
+        "no-vig probabilities. It is a market benchmark, not an "
+        "independent prediction."
+    )
+
+    # -----------------------------
+    # TEMPORARY EV CALCULATOR
+    # -----------------------------
+
+    st.divider()
+
+    st.header("Expected Value Calculator")
+
+    st.write(
+        "This calculator temporarily uses a manually entered probability "
+        "to test the EV calculations. The final version will replace this "
+        "input with a probability generated by our statistical model."
+    )
+
+    best_for_calculator = best.reset_index(drop=True)
+
+    choice_labels = []
+
+    for index, row in best_for_calculator.iterrows():
+
+        choice_labels.append(
+            f"{row['Game']} | {row['Market']} | "
+            f"{row['Selection']} | {row['Best Sportsbook']} "
+            f"| Option {index + 1}"
+        )
+
+    selected_choice = st.selectbox(
+        "Choose a selection to evaluate",
+        choice_labels
+    )
+
+    selected_index = choice_labels.index(selected_choice)
+
+    selected = best_for_calculator.iloc[selected_index]
+
+    st.subheader(selected["Selection"])
+
+    info1, info2, info3 = st.columns(3)
+
+    info1.metric(
+        "Best Sportsbook",
+        selected["Best Sportsbook"]
+    )
+
+    info2.metric(
+        "Best American Odds",
+        f"{selected['Best Odds']:+.0f}"
+    )
+
+    info3.metric(
+        "Break-Even Probability",
+        f"{selected['Best Price Break-Even']:.2%}"
+    )
+
+    if pd.notna(selected["Market_Fair_Probability"]):
+
+        st.write(
+            "Average sportsbook no-vig probability: "
+            f"**{selected['Market_Fair_Probability']:.2%}**"
+        )
+
+    estimated_probability_pct = st.number_input(
+        "Temporary estimated win probability (%)",
+        min_value=0.0,
+        max_value=100.0,
+        value=50.0,
+        step=0.5
+    )
+
+    estimated_probability = estimated_probability_pct / 100
+
+    expected_value = calculate_ev(
+        estimated_probability,
+        selected["Best Odds"],
+        stake=100
+    )
+
+    expected_value_pct = expected_value
+
+    st.subheader("EV Calculation Results")
+
+    result1, result2, result3 = st.columns(3)
+
+    result1.metric(
+        "Estimated Win Probability",
+        f"{estimated_probability_pct:.1f}%"
+    )
+
+    result2.metric(
+        "Expected Value per $100",
+        f"${expected_value:+.2f}"
+    )
+
+    result3.metric(
+        "Expected ROI",
+        f"{expected_value_pct:+.2f}%"
+    )
+
+    if expected_value > 0:
+
+        st.success(
+            "Positive theoretical EV using the probability you entered."
+        )
+
+    elif expected_value < 0:
+
+        st.warning(
+            "Negative theoretical EV using the probability you entered."
+        )
+
+    else:
+
+        st.info("This estimate is exactly at break-even.")
+
+    st.caption(
+        "Important: This is a calculation test, not a betting recommendation. "
+        "The result is only as reliable as the probability entered. "
+        "The final system will generate its own estimates from statistical "
+        "data, and those estimates must be tested against historical results."
+    )
+
+else:
+
+    st.info("Click 'Fetch NBA Odds' to load odds and use the calculator.")
 
 
 st.divider()
