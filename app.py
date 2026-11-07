@@ -570,3 +570,125 @@ st.divider()
 st.caption(
     "Development version | NBA Moneyline | BettingDataAPI"
 )
+
+
+# --------------------------------
+# NBA PREDICTION MODEL TESTING
+# --------------------------------
+
+st.divider()
+
+st.header("🧠 NBA Prediction Model")
+
+st.write(
+    "Train the statistical model using historical NBA results "
+    "and evaluate its predictions on unseen games."
+)
+
+if st.button("Train and Test NBA Model", type="primary"):
+
+    with st.spinner(
+        "Training the model and testing historical predictions..."
+    ):
+
+        try:
+
+            results = train_and_evaluate()
+
+            st.session_state["nba_model_metrics"] = (
+                results["metrics"]
+            )
+
+            st.success("Model training and testing completed!")
+
+        except Exception as error:
+
+            st.error(
+                f"Model training failed: {error}"
+            )
+
+
+# Display saved results
+
+if "nba_model_metrics" in st.session_state:
+
+    metrics = st.session_state["nba_model_metrics"]
+
+    st.subheader("Historical Test Results")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Prediction Accuracy",
+        f"{metrics['accuracy']:.1%}"
+    )
+
+    col2.metric(
+        "Model Brier Score",
+        f"{metrics['brier_score']:.4f}"
+    )
+
+    col3.metric(
+        "Model Log Loss",
+        f"{metrics['log_loss']:.4f}"
+    )
+
+    st.subheader("Model vs. Baseline")
+
+    comparison = pd.DataFrame({
+        "Measurement": [
+            "Brier Score",
+            "Log Loss"
+        ],
+        "Our Model": [
+            metrics["brier_score"],
+            metrics["log_loss"]
+        ],
+        "Simple Baseline": [
+            metrics["baseline_brier_score"],
+            metrics["baseline_log_loss"]
+        ]
+    })
+
+    st.dataframe(
+        comparison,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.write(
+        f"Training games: **{metrics['training_rows']:,}**"
+    )
+
+    st.write(
+        f"Testing games: **{metrics['testing_rows']:,}**"
+    )
+
+    st.write(
+        f"Testing began: **{metrics['test_start_date']}**"
+    )
+
+    if (
+        metrics["brier_score"]
+        < metrics["baseline_brier_score"]
+        and metrics["log_loss"]
+        < metrics["baseline_log_loss"]
+    ):
+
+        st.success(
+            "The model outperformed the simple baseline "
+            "on both probability scoring measurements."
+        )
+
+    else:
+
+        st.warning(
+            "The model has not beaten the baseline on both "
+            "measurements. We need to investigate and improve it."
+        )
+
+    st.caption(
+        "These are historical test results, not a guarantee "
+        "of future betting performance. We must validate "
+        "probability calibration and test additional seasons."
+    )
