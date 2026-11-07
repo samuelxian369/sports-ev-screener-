@@ -59,7 +59,7 @@ if st.button("Fetch NBA Odds", type="primary"):
     with st.spinner("Connecting to BettingDataAPI..."):
 
         try:
-            data = fetch_odds(sport="nba")
+            data = fetch_odds(sport="basketball_nba")
 
             st.success("API request completed!")
 
