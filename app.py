@@ -802,3 +802,48 @@ if os.path.exists(odds_file):
 
 else:
     st.error(f"File not found: {odds_file}")
+
+
+# ==========================================
+# HISTORICAL ODDS DATA QUALITY CHECK
+# ==========================================
+
+st.header("Historical Odds Data Quality")
+
+if os.path.exists("data/odds_moneyline.csv"):
+
+    odds_check = pd.read_csv("data/odds_moneyline.csv")
+
+    st.write("Unique games:", odds_check["game_id"].nunique())
+
+    st.write("Odds records per game (average):",
+             round(len(odds_check) / odds_check["game_id"].nunique(), 2))
+
+    st.subheader("Snapshot Types")
+    st.write(odds_check["snapshot"].value_counts(dropna=False))
+
+    st.subheader("Quote Quality")
+    st.write(odds_check["quote_quality"].value_counts(dropna=False))
+
+    st.subheader("Data Flags")
+
+    for column in ["benchmark_eligible", "score_verified", "benchmark_only"]:
+        st.write(column)
+        st.write(odds_check[column].value_counts(dropna=False))
+
+    st.subheader("Missing Odds Prices")
+
+    st.write("Missing home moneylines:",
+             odds_check["home_moneyline"].isna().sum())
+
+    st.write("Missing away moneylines:",
+             odds_check["away_moneyline"].isna().sum())
+
+    st.write("Missing no-vig home probabilities:",
+             odds_check["home_no_vig_probability"].isna().sum())
+
+    st.write("Missing no-vig away probabilities:",
+             odds_check["away_no_vig_probability"].isna().sum())
+
+    st.subheader("Sample Records")
+    st.dataframe(odds_check.head(5))
