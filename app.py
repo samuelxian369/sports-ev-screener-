@@ -585,6 +585,7 @@ st.write(
     "and evaluate its predictions on unseen games."
 )
 
+
 if st.button("Train and Test NBA Model", type="primary"):
 
     with st.spinner(
@@ -593,23 +594,24 @@ if st.button("Train and Test NBA Model", type="primary"):
 
         try:
 
-results = train_and_evaluate()
+            results = train_and_evaluate()
 
-st.session_state["nba_model_metrics"] = (
-    results["metrics"]
-)
+            st.session_state["nba_model_metrics"] = (
+                results["metrics"]
+            )
 
-st.session_state["nba_calibration_report"] = (
-    results["calibration_report"]
-)
+            st.session_state["nba_calibration_report"] = (
+                results["calibration_report"]
+            )
 
-st.success("Model training and testing completed!")
+            st.success("Model training and testing completed!")
 
         except Exception as error:
 
             st.error(
                 f"Model training failed: {error}"
             )
+
 
 
 # Display saved results
