@@ -440,12 +440,6 @@ def train_and_evaluate():
         calibration_report["Predictions"] > 0
     ].copy()
 
-
-    calibration_report = calibration_report[
-        calibration_report["Predictions"] > 0
-    ].copy()
-
-    
     return {
         "model": model,
         "metrics": metrics,
