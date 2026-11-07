@@ -871,3 +871,114 @@ if "nba_test_predictions" in st.session_state:
 
     st.subheader("First 10 Predictions")
     st.dataframe(predictions_df.head(10))
+
+
+# ==========================================
+# CHECK MODEL PREDICTIONS AGAINST HISTORICAL ODDS
+# ==========================================
+
+if "nba_test_predictions" in st.session_state:
+
+    predictions_df = st.session_state["nba_test_predictions"]
+
+    st.divider()
+    st.header("Historical Odds Match Check")
+
+    try:
+        odds_df = pd.read_csv("data/odds_moneyline.csv")
+
+        # Convert model predictions into home/away game records
+        test_games = predictions_df[
+            ["game_date", "home_flag", "team", "opponent"]
+        ].copy()
+
+        test_games["game_date"] = (
+            pd.to_datetime(test_games["game_date"])
+            .dt.strftime("%Y-%m-%d")
+        )
+
+        test_games["home_abbr"] = test_games.apply(
+            lambda row: row["team"]
+            if row["home_flag"] == 1
+            else row["opponent"],
+            axis=1
+        )
+
+        test_games["away_abbr"] = test_games.apply(
+            lambda row: row["opponent"]
+            if row["home_flag"] == 1
+            else row["team"],
+            axis=1
+        )
+
+        test_games = test_games[
+            ["game_date", "home_abbr", "away_abbr"]
+        ].drop_duplicates()
+
+        # Keep reliable closing odds records
+        odds_df["game_date"] = (
+            pd.to_datetime(odds_df["game_date"])
+            .dt.strftime("%Y-%m-%d")
+        )
+
+        close_odds = odds_df[
+            (odds_df["snapshot"] == "close") &
+            (odds_df["quote_quality"] == "ok") &
+            (odds_df["benchmark_eligible"].astype(str).str.lower() == "true")
+        ].copy()
+
+        odds_games = close_odds[
+            ["game_date", "home_abbr", "away_abbr"]
+        ].drop_duplicates()
+
+        # Match model test games to historical odds games
+        matched = test_games.merge(
+            odds_games,
+            on=["game_date", "home_abbr", "away_abbr"],
+            how="inner"
+        )
+
+        unmatched = test_games.merge(
+            odds_games,
+            on=["game_date", "home_abbr", "away_abbr"],
+            how="left",
+            indicator=True
+        )
+
+        unmatched = unmatched[
+            unmatched["_merge"] == "left_only"
+        ]
+
+        st.write("Model test games:", len(test_games))
+        st.write("Historical closing-odds games:", len(odds_games))
+        st.write("Successfully matched games:", len(matched))
+        st.write("Unmatched model games:", len(unmatched))
+
+        if len(test_games) > 0:
+            match_rate = len(matched) / len(test_games) * 100
+            st.write(f"Match rate: {match_rate:.1f}%")
+
+        st.subheader("Example Matched Games")
+        st.dataframe(matched.head(10))
+
+        st.subheader("Example Unmatched Games")
+        st.dataframe(unmatched.head(10))
+
+        st.subheader("Example Historical Closing Odds")
+        st.dataframe(
+            close_odds[
+                [
+                    "game_date",
+                    "home_abbr",
+                    "away_abbr",
+                    "bookmaker",
+                    "home_moneyline",
+                    "away_moneyline",
+                    "home_no_vig_probability",
+                    "away_no_vig_probability"
+                ]
+            ].head(10)
+        )
+
+    except Exception as error:
+        st.error(f"Odds matching check failed: {error}")
