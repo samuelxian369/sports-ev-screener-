@@ -150,9 +150,10 @@ if st.button("Fetch NBA Odds", type="primary"):
                     # Convert UTC times to Oakland local time
                     odds_table["Start Time"] = (
                         pd.to_datetime(
-                            odds_table["Start Time (UTC)"],
-                            utc=True
-                        )
+                    odds_table["Start Time (UTC)"],
+                    format="ISO8601",
+                    utc=True
+                    )
                         .dt.tz_convert("America/Los_Angeles")
                         .dt.strftime("%b %d, %I:%M %p")
                     )
@@ -160,6 +161,7 @@ if st.button("Fetch NBA Odds", type="primary"):
                     odds_table["Last Updated"] = (
                         pd.to_datetime(
                             odds_table["Last Updated (UTC)"],
+                            format="ISO8601",
                             utc=True
                         )
                         .dt.tz_convert("America/Los_Angeles")
