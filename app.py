@@ -1,49 +1,65 @@
+
 import streamlit as st
 import pandas as pd
-import numpy as np
 
-# Page configuration
+from data_providers.odds_api import fetch_odds
+
 st.set_page_config(
     page_title="Sports Betting EV Screener",
     page_icon="📊",
     layout="wide"
 )
 
-# Main title
-st.title("Sports Betting EV Screener")
+st.title("📊 Sports Betting EV Screener")
 
 st.write(
     "Your personal platform for identifying "
     "positive Expected Value betting opportunities."
 )
 
-# Sidebar
 st.sidebar.header("Screener Settings")
 
 sport = st.sidebar.selectbox(
     "Select Sport",
-    ["All Sports", "NBA", "NFL", "MLB", "NHL", "Soccer", "Tennis"]
+    ["NBA"]
 )
 
 market = st.sidebar.selectbox(
     "Select Market",
-    ["All Markets", "Player Props", "Game Lines", "Totals", "Moneyline"]
+    ["Moneyline"]
 )
 
-# Dashboard metrics
-col1, col2, col3 = st.columns(3)
+st.header("Live Odds Test")
 
-col1.metric("Opportunities Found", "--")
-col2.metric("Average Expected Value", "--")
-col3.metric("Sports Covered", "7")
-
-# Main section
-st.header("Betting Opportunities")
-
-st.info(
-    "Your screener is being built. "
-    "Sportsbook data will appear here once we connect an API."
+st.write(
+    "This is our first connection to a real sportsbook "
+    "odds data provider."
 )
 
-st.write("Selected Sport:", sport)
-st.write("Selected Market:", market)
+if st.button("Fetch NBA Odds"):
+    with st.spinner("Retrieving odds..."):
+        try:
+            odds = fetch_odds(
+                sport="basketball_nba",
+                markets=["h2h"]
+            )
+
+            if odds.empty:
+                st.warning(
+                    "The API connected, but no odds were returned. "
+                    "There may be no available games."
+                )
+            else:
+                st.success("Successfully retrieved odds!")
+                st.metric("Odds Retrieved", len(odds))
+                st.dataframe(
+                    odds,
+                    use_container_width=True
+                )
+
+        except Exception as error:
+            st.error(f"Something went wrong: {error}")
+
+st.caption(
+    "Initial testing version — NBA moneyline markets only."
+)
