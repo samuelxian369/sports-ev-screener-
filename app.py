@@ -5,10 +5,6 @@ import pandas as pd
 from data_providers.odds_api import fetch_odds
 
 
-# -----------------------------
-# PAGE CONFIGURATION
-# -----------------------------
-
 st.set_page_config(
     page_title="Sports Betting EV Screener",
     page_icon="📊",
@@ -29,22 +25,35 @@ st.write(
 
 st.sidebar.header("Screener Settings")
 
-sport = st.sidebar.selectbox(
-    "Select Sport",
-    ["NBA"]
-)
-
-market = st.sidebar.selectbox(
-    "Select Market",
-    ["Moneyline"]
-)
+sport = st.sidebar.selectbox("Select Sport", ["NBA"])
+market = st.sidebar.selectbox("Select Market", ["Moneyline"])
 
 
 # -----------------------------
-# HELPER FUNCTIONS
+# ODDS CALCULATIONS
 # -----------------------------
 
-def format_book(book):
+def american_to_probability(odds):
+
+    if odds is None:
+        return None
+
+    try:
+        odds = float(odds)
+    except (ValueError, TypeError):
+        return None
+
+    if odds < 0:
+        return abs(odds) / (abs(odds) + 100)
+
+    elif odds > 0:
+        return 100 / (odds + 100)
+
+    return None
+
+
+def convert_book(book):
+
     names = {
         "williamhill_us": "William Hill",
         "betrivers": "BetRivers",
@@ -63,42 +72,81 @@ def convert_odds_data(response):
 
     rows = []
 
-    games = response.get("data", [])
-
-    for game in games:
+    for game in response.get("data", []):
 
         home = game.get("home_team", "Unknown")
         away = game.get("away_team", "Unknown")
-
-        start_time = game.get("start_time")
 
         for book in game.get("books", []):
 
             for outcome in book.get("outcomes", []):
 
+                odds = outcome.get("price")
+
                 rows.append({
+                    "Event ID": game.get("event_id"),
                     "Game": f"{away} @ {home}",
-                    "Start Time (UTC)": start_time,
-                    "Sportsbook": format_book(
+                    "Start Time (UTC)": game.get("start_time"),
+                    "Sportsbook": convert_book(
                         book.get("book", "Unknown")
                     ),
                     "Market": book.get("market", "Unknown"),
                     "Selection": outcome.get("name", "Unknown"),
-                    "American Odds": outcome.get("price"),
-                    "Last Updated (UTC)": book.get("updated_at")
+                    "American Odds": odds,
+                    "Last Updated (UTC)": book.get("updated_at"),
+                    "Implied Probability": american_to_probability(odds)
                 })
 
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+
+    if df.empty:
+        return df
+
+    # Calculate no-vig probability separately
+    # for each game, sportsbook and market.
+
+    group_columns = [
+        "Event ID",
+        "Sportsbook",
+        "Market"
+    ]
+
+    df["Market Probability Total"] = (
+        df.groupby(group_columns)["Implied Probability"]
+        .transform("sum")
+    )
+
+    df["Outcome Count"] = (
+        df.groupby(group_columns)["Implied Probability"]
+        .transform("count")
+    )
+
+    # Only calculate when at least two outcomes are available.
+    # A single-sided quote cannot produce a reliable no-vig estimate.
+
+    df["No-Vig Probability"] = (
+        df["Implied Probability"] /
+        df["Market Probability Total"]
+    )
+
+    df.loc[
+        (df["Outcome Count"] < 2) |
+        (df["Market Probability Total"] <= 0),
+        "No-Vig Probability"
+    ] = None
+
+    return df
 
 
 # -----------------------------
 # DASHBOARD
 # -----------------------------
 
-st.header("NBA Odds Screener")
+st.header("NBA Moneyline Analysis")
 
 st.write(
-    "Retrieve moneyline odds from multiple sportsbooks."
+    "Compare sportsbook odds and calculate "
+    "vig-free market probabilities."
 )
 
 if st.button("Fetch NBA Odds", type="primary"):
@@ -120,21 +168,15 @@ if st.button("Fetch NBA Odds", type="primary"):
 
                 odds_table = convert_odds_data(response)
 
-                st.success("Successfully retrieved odds!")
-
                 games = response.get("data", [])
+
+                st.success("Successfully retrieved odds!")
 
                 col1, col2, col3 = st.columns(3)
 
-                col1.metric(
-                    "Games Found",
-                    len(games)
-                )
+                col1.metric("Games Found", len(games))
 
-                col2.metric(
-                    "Odds Records",
-                    len(odds_table)
-                )
+                col2.metric("Odds Records", len(odds_table))
 
                 col3.metric(
                     "Data Source",
@@ -147,13 +189,14 @@ if st.button("Fetch NBA Odds", type="primary"):
 
                 else:
 
-                    # Convert UTC times to Oakland local time
+                    # Convert timestamps to Pacific Time.
+
                     odds_table["Start Time"] = (
                         pd.to_datetime(
-                    odds_table["Start Time (UTC)"],
-                    format="ISO8601",
-                    utc=True
-                    )
+                            odds_table["Start Time (UTC)"],
+                            format="ISO8601",
+                            utc=True
+                        )
                         .dt.tz_convert("America/Los_Angeles")
                         .dt.strftime("%b %d, %I:%M %p")
                     )
@@ -168,14 +211,37 @@ if st.button("Fetch NBA Odds", type="primary"):
                         .dt.strftime("%b %d, %I:%M %p")
                     )
 
+                    # Display probabilities as percentages.
+
+                    odds_table["Implied Probability"] = (
+                        odds_table["Implied Probability"]
+                        .apply(
+                            lambda x: f"{x:.2%}"
+                            if pd.notna(x) else "—"
+                        )
+                    )
+
+                    odds_table["No-Vig Probability"] = (
+                        odds_table["No-Vig Probability"]
+                        .apply(
+                            lambda x: f"{x:.2%}"
+                            if pd.notna(x) else "Unavailable"
+                        )
+                    )
+
+                    # Remove internal calculation columns.
+
                     odds_table = odds_table.drop(
                         columns=[
+                            "Event ID",
                             "Start Time (UTC)",
-                            "Last Updated (UTC)"
+                            "Last Updated (UTC)",
+                            "Market Probability Total",
+                            "Outcome Count"
                         ]
                     )
 
-                    st.subheader("Retrieved Sportsbook Odds")
+                    st.subheader("Sportsbook Odds & Fair Probabilities")
 
                     st.dataframe(
                         odds_table,
@@ -183,18 +249,17 @@ if st.button("Fetch NBA Odds", type="primary"):
                         hide_index=True
                     )
 
-                    st.caption(
-                        "Times are displayed in Pacific Time. "
-                        "Last Updated refers to each sportsbook's "
-                        "quote timestamp, not necessarily the time "
-                        "you retrieved the data."
+                    st.download_button(
+                        "Download Analysis as CSV",
+                        data=odds_table.to_csv(index=False),
+                        file_name="nba_no_vig_analysis.csv",
+                        mime="text/csv"
                     )
 
-                    st.download_button(
-                        "Download Odds as CSV",
-                        data=odds_table.to_csv(index=False),
-                        file_name="nba_odds.csv",
-                        mime="text/csv"
+                    st.info(
+                        "No-vig probabilities are calculated "
+                        "separately for each sportsbook. They are "
+                        "market benchmarks, not independent predictions."
                     )
 
         except Exception as error:
